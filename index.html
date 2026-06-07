@@ -606,37 +606,50 @@ const AdGram = {
     try {
       if (isTask && typeof window.Adsgram !== 'undefined') {
         ctrl = window.Adsgram.init({blockId: AD_TASK});
-      } else if (AdGram._ctrls[nextRW()]) {
-        ctrl = AdGram._ctrls[nextRW()];
+      } else if (typeof window.Adsgram !== 'undefined') {
+        ctrl = window.Adsgram.init({blockId: nextRW()});
       }
     } catch(e) {}
 
-    if (!ctrl) { AdGram._fallback(); return; }
+    if (!ctrl) {
+      // Adsgram not available (not inside Telegram)
+      el('adLoading').classList.remove('show');
+      showToast('Ad not available. Open inside Telegram!');
+      return;
+    }
 
     ctrl.show()
-      .then(function(){ el('adLoading').classList.remove('show'); AdGram._done(); })
-      .catch(function(err){
+      .then(function(){
+        // ✅ Ad watched fully — give reward
         el('adLoading').classList.remove('show');
-        if (err && err.done === false) showToast('Watch full ad to earn!');
-        else AdGram._done();
+        AdGram._done();
+      })
+      .catch(function(err){
+        // ❌ Ad failed, skipped, or not available — NO reward
+        el('adLoading').classList.remove('show');
+        if (err && err.done === false) {
+          showToast('Watch the full ad to earn your reward!');
+        } else {
+          showToast('No ad available right now. Try again later!');
+        }
+        // DO NOT call _done() — no reward given
       });
   },
 
   _done: function() {
+    // Only called after SUCCESSFUL ad completion
     const c = AdGram._ctx, r = AdGram._rew;
-    if (c === 'mine')            { Game.resume(); return; }
+    if (c === 'mine')               { Game.resume(); return; }
     if (c && c.startsWith('task:')) { Tsk.complete(c.split(':')[1]); return; }
-    if (c === 'spin')            { S.coins+=r; coinsUI(); save(); showToast('+'+fmt(r)+' coins added!'); return; }
-    if (c && c.startsWith('rupee:')) { RM.giveReward(parseInt(c.split(':')[1])); return; }
+    if (c === 'spin')               { S.coins+=r; coinsUI(); save(); showToast('+'+fmt(r)+' coins added!'); return; }
+    if (c && c.startsWith('rupee:')){ RM.giveReward(parseInt(c.split(':')[1])); return; }
   },
 
   _fallback: function() {
-    let t = 0;
-    const iv = setInterval(function(){
-      t++;
-      el('adTxt').textContent = 'Ad playing… ('+(5-t)+'s)';
-      if (t >= 5) { clearInterval(iv); el('adLoading').classList.remove('show'); AdGram._done(); }
-    }, 1000);
+    // Only used when Adsgram SDK not loaded at all
+    el('adLoading').classList.remove('show');
+    showToast('Ad not available. Open inside Telegram!');
+    // NO reward on fallback
   }
 };
 
