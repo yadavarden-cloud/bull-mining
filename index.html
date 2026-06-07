@@ -436,9 +436,9 @@ try {
 } catch(e) { console.warn('Firebase init failed:', e.message); }
 
 /* ── 2. ADSGRAM IDs ── */
-const AD_RW     = ['33755','33847'];
+const AD_RW     = ['33755'];
 const AD_TASK   = 'task-33976';
-const AD_BANNER = '34256';
+const AD_BANNER = '33755';
 let adIdx = 0;
 const nextRW = () => AD_RW[adIdx++ % AD_RW.length];
 
@@ -456,7 +456,7 @@ const TAP_AMT      = 400;
 const AK_CYCLE     = 4 * 3600 * 1000;
 const AK_BASE      = 50_000_000;
 const REF_REWARD   = 5000;
-const BOT_NAME     = 'BullMiningBot';
+const BOT_NAME     = 'bullxminingbot';
 const COIN_TO_INR  = 0.0003466;
 const RM_CYCLE_MS  = 12 * 3600 * 1000;
 const RM_WAIT_MS   = 20 * 1000;
@@ -599,41 +599,42 @@ const AdGram = {
     AdGram._ctx = ctx || null;
     AdGram._rew = reward || 0;
 
-    const isTask = ctx && (ctx.startsWith('task:') || ctx.startsWith('rupee:'));
-    let ctrl = null;
+    // Rewarded = plain '33755', Task = 'task-33976'
+    var isTask = ctx && (ctx.startsWith('task:') || ctx.startsWith('rupee:'));
+    var blockId = isTask ? AD_TASK : AD_RW[0];
 
+    var ctrl = null;
     try {
       if (typeof window.Adsgram !== 'undefined') {
-        const blockId = isTask ? AD_TASK : nextRW();
         ctrl = window.Adsgram.init({ blockId: blockId });
       }
-    } catch(e) {}
+    } catch(e) { console.warn('Adsgram init error:', e); }
 
     if (!ctrl) {
-      // Adsgram SDK not loaded — show fallback timer
-      AdGram._showFakeAd();
+      // Adsgram SDK not available — NO reward, just inform user
+      showToast('Open app inside Telegram to watch ads!');
       return;
     }
 
-    // Show loading briefly
     el('adTxt').textContent = 'Loading Ad…';
     el('adLoading').classList.add('show');
 
     ctrl.show()
       .then(function() {
-        // ✅ Real ad watched fully
+        // ✅ Ad completed successfully — give reward
         el('adLoading').classList.remove('show');
         AdGram._done();
       })
       .catch(function(err) {
+        // ❌ Ad not completed — NO reward ever
         el('adLoading').classList.remove('show');
+        console.log('Ad error:', err);
         if (err && err.done === false) {
-          // User skipped ad — no reward
-          showToast('Watch the full ad to earn reward!');
+          showToast('Watch the complete ad to earn reward!');
         } else {
-          // No ad available from Adsgram — show fallback timer
-          AdGram._showFakeAd();
+          showToast('No ads available right now. Try again in a few minutes!');
         }
+        // NEVER call _done() here — no reward on failure
       });
   },
 
@@ -940,10 +941,27 @@ const Ref = {
 
   getStartParam: function() {
     try {
-      const tg=window.Telegram&&window.Telegram.WebApp;
-      if(tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param) return tg.initDataUnsafe.start_param;
-      return new URLSearchParams(window.location.search).get('start');
-    } catch(e){ return null; }
+      // Method 1: Telegram WebApp initDataUnsafe (most reliable)
+      var tg = window.Telegram && window.Telegram.WebApp;
+      if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+        return tg.initDataUnsafe.start_param;
+      }
+      // Method 2: initData string parse
+      if (tg && tg.initData) {
+        var params = new URLSearchParams(tg.initData);
+        var startParam = params.get('start_param');
+        if (startParam) return startParam;
+      }
+      // Method 3: URL query param
+      var urlParam = new URLSearchParams(window.location.search).get('start');
+      if (urlParam) return urlParam;
+      // Method 4: URL hash
+      var hash = window.location.hash.replace('#','');
+      if (hash && hash.startsWith('tgWebAppStartParam=')) {
+        return decodeURIComponent(hash.replace('tgWebAppStartParam=','').split('&')[0]);
+      }
+      return null;
+    } catch(e) { return null; }
   },
 
   getLink: function() { return 'https://t.me/'+BOT_NAME+'?start='+S.uid; },
