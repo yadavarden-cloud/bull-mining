@@ -598,58 +598,112 @@ const AdGram = {
   show: function(ctx, reward) {
     AdGram._ctx = ctx || null;
     AdGram._rew = reward || 0;
-    el('adTxt').textContent = 'Loading Ad…';
-    el('adLoading').classList.add('show');
 
-    const isTask  = ctx && (ctx.startsWith('task:') || ctx.startsWith('rupee:'));
+    const isTask = ctx && (ctx.startsWith('task:') || ctx.startsWith('rupee:'));
     let ctrl = null;
+
     try {
-      if (isTask && typeof window.Adsgram !== 'undefined') {
-        ctrl = window.Adsgram.init({blockId: AD_TASK});
-      } else if (typeof window.Adsgram !== 'undefined') {
-        ctrl = window.Adsgram.init({blockId: nextRW()});
+      if (typeof window.Adsgram !== 'undefined') {
+        const blockId = isTask ? AD_TASK : nextRW();
+        ctrl = window.Adsgram.init({ blockId: blockId });
       }
     } catch(e) {}
 
     if (!ctrl) {
-      // Adsgram not available (not inside Telegram)
-      el('adLoading').classList.remove('show');
-      showToast('Ad not available. Open inside Telegram!');
+      // Adsgram SDK not loaded — show fallback timer
+      AdGram._showFakeAd();
       return;
     }
 
+    // Show loading briefly
+    el('adTxt').textContent = 'Loading Ad…';
+    el('adLoading').classList.add('show');
+
     ctrl.show()
-      .then(function(){
-        // ✅ Ad watched fully — give reward
+      .then(function() {
+        // ✅ Real ad watched fully
         el('adLoading').classList.remove('show');
         AdGram._done();
       })
-      .catch(function(err){
-        // ❌ Ad failed, skipped, or not available — NO reward
+      .catch(function(err) {
         el('adLoading').classList.remove('show');
         if (err && err.done === false) {
-          showToast('Watch the full ad to earn your reward!');
+          // User skipped ad — no reward
+          showToast('Watch the full ad to earn reward!');
         } else {
-          showToast('No ad available right now. Try again later!');
+          // No ad available from Adsgram — show fallback timer
+          AdGram._showFakeAd();
         }
-        // DO NOT call _done() — no reward given
       });
   },
 
+  _showFakeAd: function() {
+    // 30-second fake ad timer shown when real ad unavailable
+    el('adTxt').textContent = 'Ad loading…';
+    el('adLoading').classList.add('show');
+    var progress = 0;
+    var total = 30;
+    // Show fake ad UI
+    var adLoadDiv = el('adLoading');
+    adLoadDiv.innerHTML =
+      '<div style="width:280px;background:rgba(22,0,56,.95);border:1px solid rgba(124,58,237,.4);border-radius:18px;padding:24px;text-align:center;">' +
+        '<div style="font-family:Orbitron,sans-serif;font-size:13px;color:#a78bfa;letter-spacing:1px;margin-bottom:16px;">ADVERTISEMENT</div>' +
+        '<div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#ff2d8b,#7c3aed);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">' +
+          '<svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
+        '</div>' +
+        '<div style="font-size:13px;color:#c4b5d4;margin-bottom:16px;">Please wait while ad plays</div>' +
+        '<div style="background:rgba(255,255,255,.06);border-radius:10px;height:6px;overflow:hidden;margin-bottom:8px;">' +
+          '<div id="fakeAdBar" style="background:linear-gradient(90deg,#ff2d8b,#7c3aed);height:100%;border-radius:10px;width:0%;transition:width 1s linear;"></div>' +
+        '</div>' +
+        '<div id="fakeAdTimer" style="font-family:Orbitron,sans-serif;font-size:12px;color:#7c6a9a;">0 / 30s</div>' +
+        '<div id="fakeAdSkip" style="margin-top:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 24px;font-family:Orbitron,sans-serif;font-size:11px;color:#7c6a9a;cursor:not-allowed;">Wait…</div>' +
+      '</div>';
+
+    var iv = setInterval(function() {
+      progress++;
+      var pct = (progress / total * 100);
+      var barEl  = document.getElementById('fakeAdBar');
+      var timEl  = document.getElementById('fakeAdTimer');
+      var skipEl = document.getElementById('fakeAdSkip');
+      if (barEl)  barEl.style.width  = pct + '%';
+      if (timEl)  timEl.textContent  = progress + ' / ' + total + 's';
+      if (progress >= total) {
+        clearInterval(iv);
+        // Restore normal adLoading HTML
+        adLoadDiv.innerHTML =
+          '<div class="ad-spinner"></div>' +
+          '<div class="ad-txt" id="adTxt">Loading Ad…</div>';
+        adLoadDiv.classList.remove('show');
+        // ✅ Give reward after fake ad completes
+        AdGram._done();
+      } else if (progress >= 25 && skipEl) {
+        skipEl.style.color  = '#ff2d8b';
+        skipEl.style.border = '1px solid #ff2d8b';
+        skipEl.style.cursor = 'pointer';
+        skipEl.textContent  = 'Collect Reward';
+        skipEl.onclick = function() {
+          clearInterval(iv);
+          adLoadDiv.innerHTML =
+            '<div class="ad-spinner"></div>' +
+            '<div class="ad-txt" id="adTxt">Loading Ad…</div>';
+          adLoadDiv.classList.remove('show');
+          AdGram._done();
+        };
+      }
+    }, 1000);
+  },
+
   _done: function() {
-    // Only called after SUCCESSFUL ad completion
+    // Only called after ad (real or fake) fully completed
     const c = AdGram._ctx, r = AdGram._rew;
-    if (c === 'mine')               { Game.resume(); return; }
-    if (c && c.startsWith('task:')) { Tsk.complete(c.split(':')[1]); return; }
-    if (c === 'spin')               { S.coins+=r; coinsUI(); save(); showToast('+'+fmt(r)+' coins added!'); return; }
-    if (c && c.startsWith('rupee:')){ RM.giveReward(parseInt(c.split(':')[1])); return; }
+    if (c === 'mine')                { Game.resume(); return; }
+    if (c && c.startsWith('task:'))  { Tsk.complete(c.split(':')[1]); return; }
+    if (c === 'spin')                { S.coins+=r; coinsUI(); save(); showToast('+'+fmt(r)+' coins added!'); return; }
+    if (c && c.startsWith('rupee:')) { RM.giveReward(parseInt(c.split(':')[1])); return; }
   },
 
   _fallback: function() {
-    // Only used when Adsgram SDK not loaded at all
-    el('adLoading').classList.remove('show');
-    showToast('Ad not available. Open inside Telegram!');
-    // NO reward on fallback
+    AdGram._showFakeAd();
   }
 };
 
