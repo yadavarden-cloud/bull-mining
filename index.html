@@ -437,7 +437,7 @@ try {
 
 /* ── 2. ADSGRAM IDs ── */
 const AD_RW     = ['33755'];
-const AD_TASK   = 'task-33976';
+const AD_TASK   = '33976';
 const AD_BANNER = '33755';
 let adIdx = 0;
 const nextRW = () => AD_RW[adIdx++ % AD_RW.length];
@@ -599,7 +599,7 @@ const AdGram = {
     AdGram._ctx = ctx || null;
     AdGram._rew = reward || 0;
 
-    // Rewarded = plain '33755', Task = 'task-33976'
+    // Rewarded = plain '33755', Task = '33976'
     var isTask = ctx && (ctx.startsWith('task:') || ctx.startsWith('rupee:'));
     var blockId = isTask ? AD_TASK : AD_RW[0];
 
